@@ -17,5 +17,6 @@ void mat_print(matrix *mat);
 size_t mat_text(matrix *mat, char *string, size_t idx);
 
 void naive_matmul(matrix *a, matrix *b, matrix *out);
+void cache_matmul(matrix *a, matrix *b, matrix *out);
 
 #endif // !MATRIX_H

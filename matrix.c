@@ -24,6 +24,9 @@ matrix *mat_create(int rows, int cols) {
 }
 
 void free_matrix(matrix *mat) {
+    if (mat == NULL) {
+        return;
+    }
     free(mat->data);
     free(mat);
     return;
@@ -97,17 +100,25 @@ void naive_matmul(matrix *a, matrix *b, matrix *out) {
     return;
 }
 
-void col_matmul(matrix *a, matrix *b, matrix *out) {
+/*
+ * Based on using cache locality, where i take one row
+ * from left mat and other row from right mat.
+ *
+ * Just take an example of 2x2 and follow the iteration
+ * below
+ */
+void cache_matmul(matrix *a, matrix *b, matrix *out) {
     int cols1 = a->cols;
     int rows1 = a->rows;
     int cols2 = b->cols;
     int rows2 = b->rows;
 
+    // O[i][k] = C[i][j] * S[j][k]
     for (int i = 0; i < rows1; i++) {
-        for (int j = 0; j < cols2; j++) {
-            for (int k = 0; k < cols1; k++) {
-                out->data[i * cols2 + j] +=
-                    a->data[i * cols1 + k] * b->data[k * cols2 + j];
+        for (int j = 0; j < cols1; j++) {
+            for (int k = 0; k < cols2; k++) {
+                out->data[i * cols2 + k] +=
+                    a->data[i * cols1 + j] * b->data[j * cols2 + k];
             }
         }
     }

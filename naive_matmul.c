@@ -78,10 +78,12 @@ int main(void) {
         goto cleanup;
     }
 
+    printf("Done\n");
     for (int i = 0; i < NITER; i++) {
         fill_random(mat_a);
         fill_random(mat_b);
-        naive_matmul(mat_a, mat_b, mat_c);
+        // naive_matmul(mat_a, mat_b, mat_c);
+        cache_matmul(mat_a, mat_b, mat_c);
         idx += mat_text(mat_a, mat_string, idx);
         mat_string[idx++] = ',';
         idx += mat_text(mat_b, mat_string, idx);
