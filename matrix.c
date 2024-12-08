@@ -104,8 +104,7 @@ void naive_matmul(matrix *a, matrix *b, matrix *out) {
  * Based on using cache locality, where i take one row
  * from left mat and other row from right mat.
  *
- * Just take an example of 2x2 and follow the iteration
- * below
+ * Refer README for explanation or use any 2x2 matrix example
  */
 void cache_matmul(matrix *a, matrix *b, matrix *out) {
     int cols1 = a->cols;
