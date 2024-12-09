@@ -45,17 +45,14 @@ void mat_print(matrix *mat) {
     int rows = mat->rows;
     printf("[");
     for (int i = 0; i < rows; i++) {
-        printf("[");
+        printf("%s", (i != 0) ? " [" : "[");
         for (int j = 0; j < cols; j++) {
             printf("%f", mat->data[i * cols + j]);
             if (j != cols - 1) {
                 printf(", ");
             }
         }
-        printf("]");
-        if (i != rows - 1) {
-            printf(",");
-        }
+        printf("%s", (i != rows - 1) ? "],\n" : "]");
     }
     printf("]\n");
     return;
