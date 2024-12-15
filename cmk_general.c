@@ -3,6 +3,8 @@
 //
 // Column Major Order
 
+#include "cmk.h"
+#include "matrix.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -10,51 +12,6 @@
 #include <string.h>
 #include <time.h>
 #include <xmmintrin.h>
-
-typedef struct {
-    int total_data;
-    int rows;
-    int cols;
-    float *data;
-} matrix;
-
-matrix *mat_create(int rows, int cols) {
-    int total_data = rows * cols;
-    float *data = calloc(total_data, sizeof(float));
-    if (data == NULL) {
-        fprintf(stderr, "Couldn't allocate memory for array of size -> %d\n",
-                total_data);
-        return NULL;
-    }
-    matrix *mat = malloc(sizeof(matrix));
-    if (mat == NULL) {
-        fprintf(stderr, "Couldn't allocate memory for mat struct\n");
-        free(data);
-        return NULL;
-    }
-    mat->rows = rows;
-    mat->cols = cols;
-    mat->total_data = rows * cols;
-    mat->data = data;
-    return mat;
-}
-
-void free_matrix(matrix *mat) {
-    if (mat == NULL) {
-        return;
-    }
-    free(mat->data);
-    free(mat);
-    return;
-}
-
-void fill_random(matrix *mat, int high) {
-    size_t total_data = mat->total_data;
-    for (size_t i = 0; i < total_data; i++) {
-        mat->data[i] = ((double)rand() / (RAND_MAX + 1.0)) - 0.5;
-    }
-    return;
-}
 
 void compare_mats(float *mat1, float *mat2, const int M, const int N) {
     for (int i = 0; i < M; i++) {
@@ -70,7 +27,7 @@ void compare_mats(float *mat1, float *mat2, const int M, const int N) {
     return;
 }
 
-void matrix_print(matrix *mat) {
+void matrix_printc(matrix *mat) {
     int cols = mat->cols;
     int rows = mat->rows;
     printf("[");
@@ -91,7 +48,7 @@ void matrix_print(matrix *mat) {
     return;
 }
 
-void matmul_naive(matrix *a, matrix *b, matrix *c) {
+void matmul_naivec(matrix *a, matrix *b, matrix *c) {
     int M = a->rows;
     int N = b->cols;
     int K = b->rows;
@@ -166,47 +123,75 @@ void kernel_12x4(float *Ablock, float *Bblock, float *C, const int M,
     return;
 }
 
-void kernel_matmul(matrix *a, matrix *b, matrix *c) {
-    int rows = a->rows;
-    int common = a->cols;
-    int cols = b->cols;
+void kernel_matmul(matrix *A, matrix *B, matrix *out) {
+    int M = A->rows;
+    int N = B->cols;
+    int K = B->rows;
 
-    for (int i = 0; i < rows; i += 12) {
-        for (int j = 0; j < cols; j += 4) {
-            kernel_12x4(a->data + i, b->data + j * common,
-                        c->data + j * rows + i, rows, cols, common);
+    float Abuffer[MR * K];
+    float Bbuffer[K * NR];
+    float Cbuffer[MR * NR];
+
+    for (int i = 0; i < M; i += 12) {
+        int m = ((M - i) < MR) ? (M - i) : MR;
+
+        for (int mk = 0; mk < K; mk++) {
+            memcpy(Abuffer + mk * MR, A->data + mk * M + i, sizeof(float) * m);
+            memset(Abuffer + mk * MR + m, 0, sizeof(float) * (MR - m));
+        }
+
+        for (int j = 0; j < N; j += 4) {
+            int n = ((N - j) < NR) ? (N - j) : NR;
+
+            memcpy(Bbuffer, B->data + j * K, sizeof(float) * K * n);
+            memset(Bbuffer + n * K, 0, sizeof(float) * K * (NR - n));
+
+            int cn = 0;
+            for (; cn < n; cn++) {
+                memcpy(Cbuffer + cn * MR, out->data + j * M + i + cn * M,
+                       sizeof(float) * m);
+                memset(Cbuffer + cn * MR + m, 0, sizeof(float) * (MR - m));
+            }
+            memset(Cbuffer + cn * MR, 0, sizeof(float) * MR * (NR - cn));
+
+            kernel_12x4(Abuffer, Bbuffer, Cbuffer, MR, NR, K);
+
+            // storing result in out
+            for (int cn = 0; cn < n; cn++) {
+                memcpy(out->data + j * M + i + cn * M, Cbuffer + cn * MR,
+                       sizeof(float) * m);
+            }
         }
     }
     return;
 }
 
-uint64_t timer(void) {
-    struct timespec start;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
-    return (uint64_t)start.tv_sec * 1000000000 + (uint64_t)start.tv_nsec;
-}
-
-int main(void) {
+int main2(void) {
     srand(time(NULL));
 
-    const int M = 12 * 1;
-    const int N = 4 * 1;
-    const int K = 1 * 1;
+    const int M = rand() % 2000;
+    const int N = rand() % 2000;
+    const int K = rand() % 2000;
+
+    if (M == 0 || N == 0 || K == 0) {
+        printf("Got zero as dimension\n");
+        return 1;
+    }
+    printf("M = %d, N = %d, K = %d\n", M, N, K);
 
     matrix *a = mat_create(M, K);
     matrix *b = mat_create(K, N);
     matrix *c = mat_create(M, N);
     matrix *d = mat_create(M, N);
 
-    fill_random(a, 100);
-    fill_random(b, 100);
+    fill_random(a);
+    fill_random(b);
     memset(c->data, 0, c->total_data * sizeof(float));
     memset(d->data, 0, d->total_data * sizeof(float));
 
     kernel_matmul(a, b, c);
-    matmul_naive(a, b, d);
-
-    matrix_print(c);
+    printf("Done with kernel matmul\n");
+    matmul_naivec(a, b, d);
 
     compare_mats(c->data, d->data, M, N);
 
