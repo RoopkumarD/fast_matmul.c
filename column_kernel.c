@@ -3,7 +3,7 @@
 //
 // Column Major Order
 
-#include "cmk.h"
+#include "benchmark.h"
 #include "matrix.h"
 #include <math.h>
 #include <stdint.h>
@@ -12,6 +12,11 @@
 #include <string.h>
 #include <time.h>
 #include <xmmintrin.h>
+
+#define DO_BENCH 1
+
+#define MR 12
+#define NR 4
 
 void compare_mats(float *mat1, float *mat2, const int M, const int N) {
     for (int i = 0; i < M; i++) {
@@ -62,63 +67,82 @@ void matmul_naivec(matrix *a, matrix *b, matrix *c) {
     }
 }
 
-void kernel_12x4(float *Ablock, float *Bblock, float *C, const int M,
-                 const int N, const int K) {
-    __m128 C_buffer[4][3]; // taking nR = 4 and mR = 12
+void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
     __m128 b_packFloat4;
     __m128 a0_packFloat4;
     __m128 a1_packFloat4;
     __m128 a2_packFloat4;
 
-    for (int i = 0; i < 4; i++) {
-        C_buffer[i][0] = _mm_loadu_ps(C + i * M);
-        C_buffer[i][1] = _mm_loadu_ps(C + i * M + 4);
-        C_buffer[i][2] = _mm_loadu_ps(C + i * M + 8);
-    }
+    // loading Cbuffer matrix into registers
+    __m128 C_buffer00 = _mm_loadu_ps(C);
+    __m128 C_buffer01 = _mm_loadu_ps(C + 4);
+    __m128 C_buffer02 = _mm_loadu_ps(C + 8);
+
+    __m128 C_buffer10 = _mm_loadu_ps(C + MR);
+    __m128 C_buffer11 = _mm_loadu_ps(C + MR + 4);
+    __m128 C_buffer12 = _mm_loadu_ps(C + MR + 8);
+
+    __m128 C_buffer20 = _mm_loadu_ps(C + 2 * MR);
+    __m128 C_buffer21 = _mm_loadu_ps(C + 2 * MR + 4);
+    __m128 C_buffer22 = _mm_loadu_ps(C + 2 * MR + 8);
+
+    __m128 C_buffer30 = _mm_loadu_ps(C + 3 * MR);
+    __m128 C_buffer31 = _mm_loadu_ps(C + 3 * MR + 4);
+    __m128 C_buffer32 = _mm_loadu_ps(C + 3 * MR + 8);
 
     for (int p = 0; p < K; p++) {
-        a0_packFloat4 = _mm_loadu_ps(Ablock + p * M);
-        a1_packFloat4 = _mm_loadu_ps(Ablock + p * M + 4);
-        a2_packFloat4 = _mm_loadu_ps(Ablock + p * M + 8);
+        a0_packFloat4 = _mm_loadu_ps(Ablock + p * MR);
+        a1_packFloat4 = _mm_loadu_ps(Ablock + p * MR + 4);
+        a2_packFloat4 = _mm_loadu_ps(Ablock + p * MR + 8);
 
         b_packFloat4 = _mm_set1_ps(Bblock[p]);
-        C_buffer[0][0] =
-            _mm_add_ps(_mm_mul_ps(a0_packFloat4, b_packFloat4), C_buffer[0][0]);
-        C_buffer[0][1] =
-            _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer[0][1]);
-        C_buffer[0][2] =
-            _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer[0][2]);
+        C_buffer00 =
+            _mm_add_ps(_mm_mul_ps(a0_packFloat4, b_packFloat4), C_buffer00);
+        C_buffer01 =
+            _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer01);
+        C_buffer02 =
+            _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer02);
 
         b_packFloat4 = _mm_set1_ps(Bblock[p + K * 1]);
-        C_buffer[1][0] =
-            _mm_add_ps(_mm_mul_ps(a0_packFloat4, b_packFloat4), C_buffer[1][0]);
-        C_buffer[1][1] =
-            _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer[1][1]);
-        C_buffer[1][2] =
-            _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer[1][2]);
+        C_buffer10 =
+            _mm_add_ps(_mm_mul_ps(a0_packFloat4, b_packFloat4), C_buffer10);
+        C_buffer11 =
+            _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer11);
+        C_buffer12 =
+            _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer12);
 
         b_packFloat4 = _mm_set1_ps(Bblock[p + K * 2]);
-        C_buffer[2][0] =
-            _mm_add_ps(_mm_mul_ps(a0_packFloat4, b_packFloat4), C_buffer[2][0]);
-        C_buffer[2][1] =
-            _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer[2][1]);
-        C_buffer[2][2] =
-            _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer[2][2]);
+        C_buffer20 =
+            _mm_add_ps(_mm_mul_ps(a0_packFloat4, b_packFloat4), C_buffer20);
+        C_buffer21 =
+            _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer21);
+        C_buffer22 =
+            _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer22);
 
         b_packFloat4 = _mm_set1_ps(Bblock[p + K * 3]);
-        C_buffer[3][0] =
-            _mm_add_ps(_mm_mul_ps(a0_packFloat4, b_packFloat4), C_buffer[3][0]);
-        C_buffer[3][1] =
-            _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer[3][1]);
-        C_buffer[3][2] =
-            _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer[3][2]);
+        C_buffer30 =
+            _mm_add_ps(_mm_mul_ps(a0_packFloat4, b_packFloat4), C_buffer30);
+        C_buffer31 =
+            _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer31);
+        C_buffer32 =
+            _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer32);
     }
 
-    for (int j = 0; j < 4; j++) {
-        _mm_storeu_ps(C + j * M, C_buffer[j][0]);
-        _mm_storeu_ps(C + j * M + 4, C_buffer[j][1]);
-        _mm_storeu_ps(C + j * M + 8, C_buffer[j][2]);
-    }
+    _mm_storeu_ps(C, C_buffer00);
+    _mm_storeu_ps(C + 4, C_buffer01);
+    _mm_storeu_ps(C + 8, C_buffer02);
+
+    _mm_storeu_ps(C + MR, C_buffer10);
+    _mm_storeu_ps(C + MR + 4, C_buffer11);
+    _mm_storeu_ps(C + MR + 8, C_buffer12);
+
+    _mm_storeu_ps(C + 2 * MR, C_buffer20);
+    _mm_storeu_ps(C + 2 * MR + 4, C_buffer21);
+    _mm_storeu_ps(C + 2 * MR + 8, C_buffer22);
+
+    _mm_storeu_ps(C + 3 * MR, C_buffer30);
+    _mm_storeu_ps(C + 3 * MR + 4, C_buffer31);
+    _mm_storeu_ps(C + 3 * MR + 8, C_buffer32);
 
     return;
 }
@@ -132,29 +156,30 @@ void kernel_matmul(matrix *A, matrix *B, matrix *out) {
     float Bbuffer[K * NR];
     float Cbuffer[MR * NR];
 
-    for (int i = 0; i < M; i += 12) {
+    for (int i = 0; i < M; i += MR) {
         int m = ((M - i) < MR) ? (M - i) : MR;
 
+        // rather than memset(Ab, 0, (m < MR) * ...); this
+        // as this is always fast
+        memset(Abuffer, 0, sizeof(float) * MR * K);
         for (int mk = 0; mk < K; mk++) {
             memcpy(Abuffer + mk * MR, A->data + mk * M + i, sizeof(float) * m);
-            memset(Abuffer + mk * MR + m, 0, sizeof(float) * (MR - m));
         }
 
-        for (int j = 0; j < N; j += 4) {
+        for (int j = 0; j < N; j += NR) {
             int n = ((N - j) < NR) ? (N - j) : NR;
 
             memcpy(Bbuffer, B->data + j * K, sizeof(float) * K * n);
             memset(Bbuffer + n * K, 0, sizeof(float) * K * (NR - n));
 
-            int cn = 0;
-            for (; cn < n; cn++) {
+            // no conditional mask as above explaned for Abuffer
+            memset(Cbuffer, 0, sizeof(float) * MR * NR);
+            for (int cn = 0; cn < n; cn++) {
                 memcpy(Cbuffer + cn * MR, out->data + j * M + i + cn * M,
                        sizeof(float) * m);
-                memset(Cbuffer + cn * MR + m, 0, sizeof(float) * (MR - m));
             }
-            memset(Cbuffer + cn * MR, 0, sizeof(float) * MR * (NR - cn));
 
-            kernel_12x4(Abuffer, Bbuffer, Cbuffer, MR, NR, K);
+            kernel_12x4(Abuffer, Bbuffer, Cbuffer, K);
 
             // storing result in out
             for (int cn = 0; cn < n; cn++) {
@@ -166,9 +191,12 @@ void kernel_matmul(matrix *A, matrix *B, matrix *out) {
     return;
 }
 
-int main2(void) {
+int main(void) {
     srand(time(NULL));
 
+#ifdef DO_BENCH
+    benchmark(kernel_matmul, "benchmarks/12x4_column_optimise.txt");
+#else
     const int M = rand() % 2000;
     const int N = rand() % 2000;
     const int K = rand() % 2000;
@@ -199,5 +227,7 @@ int main2(void) {
     free_matrix(b);
     free_matrix(c);
     free_matrix(d);
+#endif // DO_BENCH
+
     return 0;
 }

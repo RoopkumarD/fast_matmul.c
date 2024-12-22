@@ -28,7 +28,7 @@ The benchmarks were conducted on the following hardware and software:
   matrix and stores the result in the corresponding row and column of the output matrix.
 
 ### 2. **Cache-Optimized Matrix Multiplication**
-- **Function**: `cache_matmul` in `matrix.c`
+- **Function**: `cache_matmul` in `cache_matmul.c`
 - **Optimization Goal**:  Minimize cache misses by exploiting spatial locality. When
   accessing matrix elements column-wise, cache misses occur frequently, as cache lines are
   optimized for contiguous memory blocks. The cache-aware algorithm reduces these misses.

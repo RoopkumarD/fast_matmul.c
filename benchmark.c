@@ -1,6 +1,7 @@
-#include "cmk.h"
+#include "benchmark.h"
 #include "matrix.h"
 #include <limits.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,7 +14,7 @@
 #include <unistd.h>
 
 #define MIN_SIZE 100
-#define MAX_SIZE 2000
+#define MAX_SIZE 1500
 #define STEPS 15
 #define NITER 20
 #define WARMUP 5
@@ -24,15 +25,13 @@ uint64_t timer(void) {
     return (uint64_t)start.tv_sec * 1000000000 + (uint64_t)start.tv_nsec;
 }
 
-int main(void) {
-    srand(time(NULL));
-
+void benchmark(void matmul(matrix *, matrix *, matrix *), char *filename) {
     struct winsize w;
 
     // Get terminal size
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) == -1) {
         perror("ioctl");
-        return 1;
+        return;
     }
 
     int width_mul = w.ws_col / NITER;
@@ -72,9 +71,11 @@ int main(void) {
         fill_random(mat_a);
         fill_random(mat_b);
         memset(mat_c->data, 0, mat_c->total_data * sizeof(float));
-        cache_matmul(mat_a, mat_b, mat_c);
+        matmul(mat_a, mat_b, mat_c);
+        printf("%d ", i);
+        fflush(stdout);
     }
-    printf("WARMUP END\n");
+    printf("\nWARMUP END\n");
     free_matrix(mat_a);
     free_matrix(mat_b);
     free_matrix(mat_c);
@@ -101,7 +102,7 @@ int main(void) {
             goto cleanup;
         }
 
-        double min_time = 1e69;
+        double min_time = INFINITY;
         double max_time = 0;
         double avg_time = 0;
 
@@ -114,7 +115,7 @@ int main(void) {
             memset(mat_c->data, 0, mat_c->total_data * sizeof(float));
 
             uint64_t start = timer();
-            kernel_matmul(mat_a, mat_b, mat_c);
+            matmul(mat_a, mat_b, mat_c);
             uint64_t end = timer();
 
             double time_elasped = (end - start) * 1e-9;
@@ -126,8 +127,8 @@ int main(void) {
         avg_time = avg_time / NITER;
 
         results[i][0] = size;
-        results[i][1] = (long)(FLOP / min_time);
-        results[i][2] = (long)(FLOP / max_time);
+        results[i][1] = (long)(FLOP / max_time);
+        results[i][2] = (long)(FLOP / min_time);
         results[i][3] = (long)(FLOP / avg_time);
 
         printf("Size: %d | min: %ld | max: %ld | avg: %ld\n", size,
@@ -140,7 +141,6 @@ int main(void) {
     }
 
     // saving the results to file
-    char *filename = "cmk_benchmark_result.txt";
     FILE *fp = fopen(filename, "w");
     if (fp == NULL) {
         perror("Couldn't open file");
@@ -159,5 +159,5 @@ cleanup:
     free_matrix(mat_a);
     free_matrix(mat_b);
     free_matrix(mat_c);
-    return 0;
+    return;
 }
