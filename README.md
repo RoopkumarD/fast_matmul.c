@@ -19,6 +19,7 @@ The benchmarks were conducted on the following hardware and software:
 - **OS**: Linux 5.15.0-126-generic  
 - **Compiler**: Ubuntu Clang 14.0.0  
 - **Library**: NumPy 1.26.1  
+- **Flags**: mmx, sse, sse2, ssse3, sse4_1, sse4_2, pclmulqdq
 
 ## Algorithms
 
@@ -26,5 +27,21 @@ Refer under notes directory about each algorithm i wrote here.
 
 ## Todo's
 
+- important future todo: seriously able to read and interpret the compiled assembly and have 100%
+  confidence about what is occuring at each step
+
 - `notes/cache_matmul.md` delve into the reason why it is fast, let's not use vague terms and really
   understand why and how it works.
+
+- `notes/kernel_matmul.md` delves into small block matrix multiplication with all other stuff to
+  make matrix multiplication fast. There are many things i didn't understand and i wrote each of
+  them in Todo's block, so solve them future me.
+
+- Lastly above code didn't beat numpy implementation which had 35 - 36 GFLOPS whereas i had 24 GFLOP
+  with openmp parallisation. Let's improve with those todo's and also refer to future direction by
+  author conclusion note.  
+  Also checkout other implementation like BLAS, etc and make our matrix multiplication faster than
+  them.
+
+- another direction is of taking fast matrix transpose of B, and then doing above stuff but still is it
+  worth it. see if doing so will result in faster matrix multiplication.

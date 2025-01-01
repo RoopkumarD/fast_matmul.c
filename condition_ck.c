@@ -13,7 +13,7 @@
 #include <time.h>
 #include <xmmintrin.h>
 
-#define DO_BENCH 1
+// #define DO_BENCH 1
 
 #define MR 12
 #define NR 4
@@ -67,7 +67,8 @@ void matmul_naivec(matrix *a, matrix *b, matrix *c) {
     }
 }
 
-void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
+void kernel_12x4(float *Ablock, float *Bblock, float *C, const int M,
+                 const int K) {
     __m128 b_packFloat4;
     __m128 a0_packFloat4;
     __m128 a1_packFloat4;
@@ -91,9 +92,9 @@ void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
     __m128 C_buffer32 = _mm_loadu_ps(C + 3 * MR + 8);
 
     for (int p = 0; p < K; p++) {
-        a0_packFloat4 = _mm_loadu_ps(Ablock + p * MR);
-        a1_packFloat4 = _mm_loadu_ps(Ablock + p * MR + 4);
-        a2_packFloat4 = _mm_loadu_ps(Ablock + p * MR + 8);
+        a0_packFloat4 = _mm_loadu_ps(Ablock + p * M);
+        a1_packFloat4 = _mm_loadu_ps(Ablock + p * M + 4);
+        a2_packFloat4 = _mm_loadu_ps(Ablock + p * M + 8);
 
         b_packFloat4 = _mm_set1_ps(Bblock[p]);
         C_buffer00 =
@@ -152,42 +153,104 @@ void kernel_matmul(matrix *A, matrix *B, matrix *out) {
     int N = B->cols;
     int K = B->rows;
 
+    int mro = M % MR;
+    int nro = N % NR;
+
     float Abuffer[MR * K];
     float Bbuffer[K * NR];
     float Cbuffer[MR * NR];
 
-    for (int i = 0; i < M; i += MR) {
-        int m = ((M - i) < MR) ? (M - i) : MR;
+    int end = M - mro;
+    memset(Abuffer, 0, sizeof(float) * MR * K);
+    for (int mk = 0; mk < K; mk++) {
+        memcpy(Abuffer + mk * MR, A->data + mk * M + end, sizeof(float) * mro);
+    }
 
-        // rather than memset(Ab, 0, (m < MR) * ...); this
-        // as this is always fast
-        memset(Abuffer, 0, sizeof(float) * MR * K);
-        for (int mk = 0; mk < K; mk++) {
-            memcpy(Abuffer + mk * MR, A->data + mk * M + i, sizeof(float) * m);
-        }
+    end = N - nro;
+    memcpy(Bbuffer, B->data + end * K, sizeof(float) * K * nro);
+    memset(Bbuffer + nro * K, 0, sizeof(float) * K * (NR - nro));
 
-        for (int j = 0; j < N; j += NR) {
-            int n = ((N - j) < NR) ? (N - j) : NR;
+    float *Ablock = NULL;
+    float *Bblock = NULL;
 
-            memcpy(Bbuffer, B->data + j * K, sizeof(float) * K * n);
-            memset(Bbuffer + n * K, 0, sizeof(float) * K * (NR - n));
+    int i = 0;
+    for (; i + MR <= M; i += MR) {
+        Ablock = A->data + i;
 
-            // no conditional mask as above explaned for Abuffer
-            memset(Cbuffer, 0, sizeof(float) * MR * NR);
-            for (int cn = 0; cn < n; cn++) {
+        int j = 0;
+        for (; j + NR <= N; j += NR) {
+            Bblock = B->data + j * K;
+
+            // memset(Cbuffer, 0, sizeof(float) * MR * NR);
+            for (int cn = 0; cn < NR; cn++) {
                 memcpy(Cbuffer + cn * MR, out->data + j * M + i + cn * M,
-                       sizeof(float) * m);
+                       sizeof(float) * MR);
             }
 
-            kernel_12x4(Abuffer, Bbuffer, Cbuffer, K);
+            kernel_12x4(Ablock, Bblock, Cbuffer, M, K);
 
             // storing result in out
-            for (int cn = 0; cn < n; cn++) {
+            for (int cn = 0; cn < NR; cn++) {
                 memcpy(out->data + j * M + i + cn * M, Cbuffer + cn * MR,
-                       sizeof(float) * m);
+                       sizeof(float) * MR);
             }
         }
+        // handling the rest edge of B
+        // but also it executes once when N % NR == 0
+        Bblock = Bbuffer;
+
+        memset(Cbuffer, 0, sizeof(float) * MR * NR);
+        for (int cn = 0; cn < nro; cn++) {
+            memcpy(Cbuffer + cn * MR, out->data + j * M + i + cn * M,
+                   sizeof(float) * MR);
+        }
+
+        kernel_12x4(Ablock, Bblock, Cbuffer, M, K);
+
+        // storing result in out
+        for (int cn = 0; cn < nro; cn++) {
+            memcpy(out->data + j * M + i + cn * M, Cbuffer + cn * MR,
+                   sizeof(float) * MR);
+        }
     }
+    // handling the rest edge of A
+    // but also it executes once when M % MR == 0
+    Ablock = Abuffer;
+
+    int j = 0;
+    for (; j + NR <= N; j += NR) {
+        Bblock = B->data + j * K;
+
+        // memset(Cbuffer, 0, sizeof(float) * MR * NR);
+        for (int cn = 0; cn < NR; cn++) {
+            memcpy(Cbuffer + cn * MR, out->data + j * M + i + cn * M,
+                   sizeof(float) * mro);
+        }
+
+        kernel_12x4(Ablock, Bblock, Cbuffer, MR, K);
+
+        // storing result in out
+        for (int cn = 0; cn < NR; cn++) {
+            memcpy(out->data + j * M + i + cn * M, Cbuffer + cn * MR,
+                   sizeof(float) * mro);
+        }
+    }
+    Bblock = Bbuffer;
+
+    memset(Cbuffer, 0, sizeof(float) * MR * NR);
+    for (int cn = 0; cn < nro; cn++) {
+        memcpy(Cbuffer + cn * MR, out->data + j * M + i + cn * M,
+               sizeof(float) * mro);
+    }
+
+    kernel_12x4(Ablock, Bblock, Cbuffer, MR, K);
+
+    // storing result in out
+    for (int cn = 0; cn < nro; cn++) {
+        memcpy(out->data + j * M + i + cn * M, Cbuffer + cn * MR,
+               sizeof(float) * mro);
+    }
+
     return;
 }
 
@@ -195,14 +258,17 @@ int main(void) {
     srand(time(NULL));
 
 #ifdef DO_BENCH
-    char filename[100];
-    memset(filename, 0, 100 * sizeof(char));
-    sprintf(filename, "benchmarks/%dx%d_column.txt", MR, NR);
-    benchmark(kernel_matmul, filename);
+    benchmark(kernel_matmul, "benchmarks/12x4_column_optimise.txt");
 #else
+    /*
     const int M = rand() % 2000;
     const int N = rand() % 2000;
     const int K = rand() % 2000;
+    */
+
+    const int M = 2000;
+    const int N = 2000;
+    const int K = 2000;
 
     if (M == 0 || N == 0 || K == 0) {
         printf("Got zero as dimension\n");
@@ -213,23 +279,32 @@ int main(void) {
     matrix *a = mat_create(M, K);
     matrix *b = mat_create(K, N);
     matrix *c = mat_create(M, N);
-    matrix *d = mat_create(M, N);
+    // matrix *d = mat_create(M, N);
 
     fill_random(a);
     fill_random(b);
     memset(c->data, 0, c->total_data * sizeof(float));
-    memset(d->data, 0, d->total_data * sizeof(float));
+    // memset(d->data, 0, d->total_data * sizeof(float));
 
     kernel_matmul(a, b, c);
+    /*
     printf("Done with kernel matmul\n");
     matmul_naivec(a, b, d);
 
     compare_mats(c->data, d->data, M, N);
+    */
+
+    /*
+    printf("=========== C =============\n");
+    matrix_printc(c);
+    printf("\n=========== D =============\n");
+    matrix_printc(d);
+    */
 
     free_matrix(a);
     free_matrix(b);
     free_matrix(c);
-    free_matrix(d);
+    // free_matrix(d);
 #endif // DO_BENCH
 
     return 0;

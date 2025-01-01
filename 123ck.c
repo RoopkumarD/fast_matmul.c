@@ -16,7 +16,7 @@
 #define DO_BENCH 1
 
 #define MR 12
-#define NR 4
+#define NR 3
 
 void compare_mats(float *mat1, float *mat2, const int M, const int N) {
     for (int i = 0; i < M; i++) {
@@ -67,7 +67,7 @@ void matmul_naivec(matrix *a, matrix *b, matrix *c) {
     }
 }
 
-void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
+void kernel_12x3(float *Ablock, float *Bblock, float *C, const int K) {
     __m128 b_packFloat4;
     __m128 a0_packFloat4;
     __m128 a1_packFloat4;
@@ -85,10 +85,6 @@ void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
     __m128 C_buffer20 = _mm_loadu_ps(C + 2 * MR);
     __m128 C_buffer21 = _mm_loadu_ps(C + 2 * MR + 4);
     __m128 C_buffer22 = _mm_loadu_ps(C + 2 * MR + 8);
-
-    __m128 C_buffer30 = _mm_loadu_ps(C + 3 * MR);
-    __m128 C_buffer31 = _mm_loadu_ps(C + 3 * MR + 4);
-    __m128 C_buffer32 = _mm_loadu_ps(C + 3 * MR + 8);
 
     for (int p = 0; p < K; p++) {
         a0_packFloat4 = _mm_loadu_ps(Ablock + p * MR);
@@ -118,14 +114,6 @@ void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
             _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer21);
         C_buffer22 =
             _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer22);
-
-        b_packFloat4 = _mm_set1_ps(Bblock[p + K * 3]);
-        C_buffer30 =
-            _mm_add_ps(_mm_mul_ps(a0_packFloat4, b_packFloat4), C_buffer30);
-        C_buffer31 =
-            _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer31);
-        C_buffer32 =
-            _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer32);
     }
 
     _mm_storeu_ps(C, C_buffer00);
@@ -139,10 +127,6 @@ void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
     _mm_storeu_ps(C + 2 * MR, C_buffer20);
     _mm_storeu_ps(C + 2 * MR + 4, C_buffer21);
     _mm_storeu_ps(C + 2 * MR + 8, C_buffer22);
-
-    _mm_storeu_ps(C + 3 * MR, C_buffer30);
-    _mm_storeu_ps(C + 3 * MR + 4, C_buffer31);
-    _mm_storeu_ps(C + 3 * MR + 8, C_buffer32);
 
     return;
 }
@@ -179,7 +163,7 @@ void kernel_matmul(matrix *A, matrix *B, matrix *out) {
                        sizeof(float) * m);
             }
 
-            kernel_12x4(Abuffer, Bbuffer, Cbuffer, K);
+            kernel_12x3(Abuffer, Bbuffer, Cbuffer, K);
 
             // storing result in out
             for (int cn = 0; cn < n; cn++) {

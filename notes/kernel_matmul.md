@@ -1,73 +1,23 @@
-// Since i have SSE instruction set -> thus 16 XMM registers and no FMA
-// instructions So i will do the both FMA in two instruction
-//
-// Column Major Order
+# Kernel Matrix Multiplication
 
-#include "benchmark.h"
-#include "matrix.h"
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <xmmintrin.h>
+Instead of performing matrix multiplication one vector at a time, we process subsets of matrices `A`
+and `B` and perform matrix multiplication using SIMD and registers to achieve better performance.
 
-#define DO_BENCH 1
+Refer to:
+- `123ck.c`
+- `column_kernel.c` for column-order matrices
+- `row_kernel.c` for row-order matrices
 
-#define MR 12
-#define NR 4
+Also you can note that i am using `Cbuffer` cause i don't have mask load and store operation.
 
-void compare_mats(float *mat1, float *mat2, const int M, const int N) {
-    for (int i = 0; i < M; i++) {
-        for (int j = 0; j < N; j++) {
-            if (fabsf(mat1[j * M + i] - mat2[j * M + i]) > 1e-3) {
-                printf("MISMATCH! Element[%d][%d] %f != %f\n", i, j,
-                       mat1[j * M + i], mat2[j * M + i]);
-                return;
-            }
-        }
-    }
-    printf("MATCH!\n");
-    return;
-}
+### Compilation Note
 
-void matrix_printc(matrix *mat) {
-    int cols = mat->cols;
-    int rows = mat->rows;
-    printf("[");
-    for (int i = 0; i < rows; i++) {
-        printf("%s", (i != 0) ? " [" : "[");
-        for (int j = 0; j < cols; j++) {
-            printf("%f", mat->data[j * rows + i]);
-            if (j != cols - 1) {
-                printf(", ");
-            }
-        }
-        printf("]");
-        if (i != rows - 1) {
-            printf(",\n");
-        }
-    }
-    printf("]\n");
-    return;
-}
+Compile with the `-O2` flag to enable efficient usage of the XMM registers. Without this
+optimization, the compiler may copy data to aligned memory on the stack, causing unnecessary
+overhead. Examine the assembly code for non-`-O2` compiled binaries to observe this behavior.
 
-void matmul_naivec(matrix *a, matrix *b, matrix *c) {
-    int M = a->rows;
-    int N = b->cols;
-    int K = b->rows;
-
-    for (int i = 0; i < M; i++) {
-        for (int j = 0; j < N; j++) {
-            for (int p = 0; p < K; p++) {
-                c->data[j * M + i] += a->data[p * M + i] * b->data[j * K + p];
-            }
-        }
-    }
-}
-
-void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
+```c
+void kernel_12x3(float *Ablock, float *Bblock, float *C, const int K) {
     __m128 b_packFloat4;
     __m128 a0_packFloat4;
     __m128 a1_packFloat4;
@@ -85,10 +35,6 @@ void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
     __m128 C_buffer20 = _mm_loadu_ps(C + 2 * MR);
     __m128 C_buffer21 = _mm_loadu_ps(C + 2 * MR + 4);
     __m128 C_buffer22 = _mm_loadu_ps(C + 2 * MR + 8);
-
-    __m128 C_buffer30 = _mm_loadu_ps(C + 3 * MR);
-    __m128 C_buffer31 = _mm_loadu_ps(C + 3 * MR + 4);
-    __m128 C_buffer32 = _mm_loadu_ps(C + 3 * MR + 8);
 
     for (int p = 0; p < K; p++) {
         a0_packFloat4 = _mm_loadu_ps(Ablock + p * MR);
@@ -118,14 +64,6 @@ void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
             _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer21);
         C_buffer22 =
             _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer22);
-
-        b_packFloat4 = _mm_set1_ps(Bblock[p + K * 3]);
-        C_buffer30 =
-            _mm_add_ps(_mm_mul_ps(a0_packFloat4, b_packFloat4), C_buffer30);
-        C_buffer31 =
-            _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer31);
-        C_buffer32 =
-            _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer32);
     }
 
     _mm_storeu_ps(C, C_buffer00);
@@ -139,10 +77,6 @@ void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
     _mm_storeu_ps(C + 2 * MR, C_buffer20);
     _mm_storeu_ps(C + 2 * MR + 4, C_buffer21);
     _mm_storeu_ps(C + 2 * MR + 8, C_buffer22);
-
-    _mm_storeu_ps(C + 3 * MR, C_buffer30);
-    _mm_storeu_ps(C + 3 * MR + 4, C_buffer31);
-    _mm_storeu_ps(C + 3 * MR + 8, C_buffer32);
 
     return;
 }
@@ -158,6 +92,14 @@ void kernel_matmul(matrix *A, matrix *B, matrix *out) {
 
     for (int i = 0; i < M; i += MR) {
         int m = ((M - i) < MR) ? (M - i) : MR;
+
+        // also notice that i am doing copying of for loop memory
+        // outside. refer row_kernel.c where i am copying Bbuffer
+        // outside cause copying inside is very costly as it takes
+        // M/MR * N/NR loop for the for loop
+        // that's why copying outside will only require M/MR
+        // inside due to continous memory i didn't have to use
+        // for loop and did directly memcpy
 
         // rather than memset(Ab, 0, (m < MR) * ...); this
         // as this is always fast
@@ -179,7 +121,7 @@ void kernel_matmul(matrix *A, matrix *B, matrix *out) {
                        sizeof(float) * m);
             }
 
-            kernel_12x4(Abuffer, Bbuffer, Cbuffer, K);
+            kernel_12x3(Abuffer, Bbuffer, Cbuffer, K);
 
             // storing result in out
             for (int cn = 0; cn < n; cn++) {
@@ -190,47 +132,55 @@ void kernel_matmul(matrix *A, matrix *B, matrix *out) {
     }
     return;
 }
+```
 
-int main(void) {
-    srand(time(NULL));
+Here, `MR = 12` and `NR = 3` gave me good GFLOPS compared to other values for MR and NR. The reason
+for choosing `NR = 3` over `NR = 4` is that using `NR = 4` results in register spills. I initially
+thought I could use all the XMM registers, but the assembly code showed otherwise. Using `NR = 3`
+reduces register use and avoids saving extra values in aligned memory, thus saving time.
 
-#ifdef DO_BENCH
-    char filename[100];
-    memset(filename, 0, 100 * sizeof(char));
-    sprintf(filename, "benchmarks/%dx%d_column.txt", MR, NR);
-    benchmark(kernel_matmul, filename);
-#else
-    const int M = rand() % 2000;
-    const int N = rand() % 2000;
-    const int K = rand() % 2000;
+### Todo
 
-    if (M == 0 || N == 0 || K == 0) {
-        printf("Got zero as dimension\n");
-        return 1;
-    }
-    printf("M = %d, N = %d, K = %d\n", M, N, K);
+1. Investigate why the code uses only one XMM register instead of utilizing all available registers
+   for kernel matrix multiplication. Analyze the compiled assembly code to identify where registers
+   are used and rewrite the code to utilize all XMM registers.
 
-    matrix *a = mat_create(M, K);
-    matrix *b = mat_create(K, N);
-    matrix *c = mat_create(M, N);
-    matrix *d = mat_create(M, N);
+Another attempt was to conditionally use either `A` or `Abuffer` by first looping through multiples
+of `MR` and then handling the rest in another loop, as shown below:
 
-    fill_random(a);
-    fill_random(b);
-    memset(c->data, 0, c->total_data * sizeof(float));
-    memset(d->data, 0, d->total_data * sizeof(float));
-
-    kernel_matmul(a, b, c);
-    printf("Done with kernel matmul\n");
-    matmul_naivec(a, b, d);
-
-    compare_mats(c->data, d->data, M, N);
-
-    free_matrix(a);
-    free_matrix(b);
-    free_matrix(c);
-    free_matrix(d);
-#endif // DO_BENCH
-
-    return 0;
+```c
+int i = 0;
+for (; i + MR < M; i += MR) {
+    // ...
 }
+// Handle the rest of the A matrix
+```
+
+However, this didn’t improve performance, even though I believe (without proof) that memory is a
+blocking factor in matrix multiplication. Refer to `condition_ck.c`.
+
+### Todo
+
+2. Understand why the above approach didn’t speed up matrix multiplication.
+3. Examine how much memory copying is blocking matrix multiplication.
+
+### Batched Matrix Multiplication
+
+This approach seems slow, which makes sense as I am doing extra work for small matrices. I suspect
+that my tiling strategy might be incorrect (needs more research as I didn’t think it through, just
+copied the tutorial’s tiling). Additionally, I think memory copying in loops is consuming the
+majority of the time compared to the internal memory copying done only once in the normal approach
+(though I haven’t checked real values, this is based on intuition). Refer to `batched_ck.c`.
+
+### Todo
+
+4. Understand tiling and caching blocks and use them for `kernel_matmul`.
+
+### OpenMP Parallelization
+
+Using OpenMP as seen in `batching.c` gave me 24 GFLOPS.
+
+### Todo
+
+5. Understand why the tutorial used aligned memory and why aligning memory to 32 bytes makes matrix
+   multiplication slightly faster.

@@ -1,8 +1,3 @@
-// Since i have SSE instruction set -> thus 16 XMM registers and no FMA
-// instructions So i will do the both FMA in two instruction
-//
-// Column Major Order
-
 #include "benchmark.h"
 #include "matrix.h"
 #include <math.h>
@@ -13,10 +8,10 @@
 #include <time.h>
 #include <xmmintrin.h>
 
-#define DO_BENCH 1
+#define DO_BENCH_SINGLE 1
 
 #define MR 12
-#define NR 4
+#define NR 3
 
 void compare_mats(float *mat1, float *mat2, const int M, const int N) {
     for (int i = 0; i < M; i++) {
@@ -86,10 +81,6 @@ void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
     __m128 C_buffer21 = _mm_loadu_ps(C + 2 * MR + 4);
     __m128 C_buffer22 = _mm_loadu_ps(C + 2 * MR + 8);
 
-    __m128 C_buffer30 = _mm_loadu_ps(C + 3 * MR);
-    __m128 C_buffer31 = _mm_loadu_ps(C + 3 * MR + 4);
-    __m128 C_buffer32 = _mm_loadu_ps(C + 3 * MR + 8);
-
     for (int p = 0; p < K; p++) {
         a0_packFloat4 = _mm_loadu_ps(Ablock + p * MR);
         a1_packFloat4 = _mm_loadu_ps(Ablock + p * MR + 4);
@@ -118,14 +109,6 @@ void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
             _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer21);
         C_buffer22 =
             _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer22);
-
-        b_packFloat4 = _mm_set1_ps(Bblock[p + K * 3]);
-        C_buffer30 =
-            _mm_add_ps(_mm_mul_ps(a0_packFloat4, b_packFloat4), C_buffer30);
-        C_buffer31 =
-            _mm_add_ps(_mm_mul_ps(a1_packFloat4, b_packFloat4), C_buffer31);
-        C_buffer32 =
-            _mm_add_ps(_mm_mul_ps(a2_packFloat4, b_packFloat4), C_buffer32);
     }
 
     _mm_storeu_ps(C, C_buffer00);
@@ -139,10 +122,6 @@ void kernel_12x4(float *Ablock, float *Bblock, float *C, const int K) {
     _mm_storeu_ps(C + 2 * MR, C_buffer20);
     _mm_storeu_ps(C + 2 * MR + 4, C_buffer21);
     _mm_storeu_ps(C + 2 * MR + 8, C_buffer22);
-
-    _mm_storeu_ps(C + 3 * MR, C_buffer30);
-    _mm_storeu_ps(C + 3 * MR + 4, C_buffer31);
-    _mm_storeu_ps(C + 3 * MR + 8, C_buffer32);
 
     return;
 }
@@ -166,6 +145,7 @@ void kernel_matmul(matrix *A, matrix *B, matrix *out) {
             memcpy(Abuffer + mk * MR, A->data + mk * M + i, sizeof(float) * m);
         }
 
+#pragma omp parallel for
         for (int j = 0; j < N; j += NR) {
             int n = ((N - j) < NR) ? (N - j) : NR;
 
@@ -199,6 +179,8 @@ int main(void) {
     memset(filename, 0, 100 * sizeof(char));
     sprintf(filename, "benchmarks/%dx%d_column.txt", MR, NR);
     benchmark(kernel_matmul, filename);
+#elif DO_BENCH_SINGLE
+    single_bench(kernel_matmul);
 #else
     const int M = rand() % 2000;
     const int N = rand() % 2000;
