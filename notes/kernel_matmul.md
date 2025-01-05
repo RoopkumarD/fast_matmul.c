@@ -184,3 +184,11 @@ Using OpenMP as seen in `batching.c` gave me 24 GFLOPS.
 
 5. Understand why the tutorial used aligned memory and why aligning memory to 32 bytes makes matrix
    multiplication slightly faster.
+
+### False Sharing (refer tid notes)
+
+since memory is being shared and not created when creating threads, i may invalidate cache line by
+writing different memory for Bbuffer. But again i think it should give me wrong answer as i am
+writing at same time to Bbuffer with all threads.
+
+6. I got this while i understood false sharing, need to check it's effect
