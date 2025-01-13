@@ -45,3 +45,6 @@ Refer under notes directory about each algorithm i wrote here.
 
 - another direction is of taking fast matrix transpose of B, and then doing above stuff but still is it
   worth it. see if doing so will result in faster matrix multiplication.
+
+- another [implementation](gist.github.com/snowclipsed/24aebbdd51218f4e17ad428630cc91d6) to take
+  reference of which outperforms implementation of numpy and such.
