@@ -48,3 +48,4 @@ Refer under notes directory about each algorithm i wrote here.
 
 - another [implementation](https://gist.github.com/snowclipsed/24aebbdd51218f4e17ad428630cc91d6) to take
   reference of which outperforms implementation of numpy and such.
+  [Grid Search for parameter](https://x.com/snowclipsed/status/1879247220752732272)
